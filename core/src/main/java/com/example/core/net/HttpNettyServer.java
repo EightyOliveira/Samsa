@@ -23,23 +23,25 @@ public class HttpNettyServer {
 
     private static final Logger log = LoggerFactory.getLogger(HttpNettyServer.class);
 
+    private final ApiGroup apiGroup;
 
     public HttpNettyServer(int port) {
         this.port = port;
+        apiGroup = new ApiGroup();
     }
 
-    /**
-     * default port:8080
-     */
+
     public HttpNettyServer() {
-        this(8080);
+        this(NettyServerConstant.PORT);
     }
 
-    public void init() {
+
+    public void run() {
         ExecutorService virtualThreadPool = Executors.newVirtualThreadPerTaskExecutor();
 
-        EventLoopGroup bossGroup = new NioEventLoopGroup(Runtime.getRuntime().availableProcessors() * 2, virtualThreadPool); // 主线程组
-        EventLoopGroup workerGroup = new NioEventLoopGroup(1024, virtualThreadPool); // 工作线程组
+        EventLoopGroup bossGroup = new NioEventLoopGroup(NettyServerConstant.Max_Master_Thread, virtualThreadPool);
+
+        EventLoopGroup workerGroup = new NioEventLoopGroup(NettyServerConstant.Max_Worker_Thread, virtualThreadPool);
 
         final HttpNettyLogHandler httpNettyLogHandler = new HttpNettyLogHandler();
         try {
@@ -53,11 +55,10 @@ public class HttpNettyServer {
                             socketChannel.pipeline()
                                     .addLast("encoder", new HttpResponseEncoder())
                                     .addLast("decoder", new HttpRequestDecoder())
-                                    // 聚合操作，将请求体和请求头等聚合
                                     .addLast("aggregator", new HttpObjectAggregator(10 * 1024 * 1024))
                                     .addLast("compressor", new HttpContentCompressor())
                                     .addLast(httpNettyLogHandler)
-                                    .addLast(new HttpNettyHandler());
+                                    .addLast(new HttpNettyHandler(apiGroup));
                         }
                     });
             ChannelFuture future = bootstrap.bind().sync();
@@ -75,4 +76,7 @@ public class HttpNettyServer {
     }
 
 
+    public ApiGroup getApiGroup() {
+        return apiGroup;
+    }
 }
