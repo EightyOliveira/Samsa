@@ -8,20 +8,51 @@ import java.util.function.Supplier;
 
 public class ApiGroup {
 
-    private final ConcurrentHashMap<String, Handler> routeMap = new ConcurrentHashMap<>();
-
+    private final ConcurrentHashMap<String, Handler> getMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Handler> postMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Handler> putMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Handler> deleteMap = new ConcurrentHashMap<>();
 
     public <T> void registerGetHandler(String path, Supplier<T> supplier) {
-        routeMap.put(path, new SupplierHandler<>(supplier));
+        getMap.put(path, new SupplierHandler<>(supplier));
     }
 
     public <T, R> void registerGetHandler(String path, Function<T, R> function) {
-        routeMap.put(path, new FunctionHandler<>(function));
+        getMap.put(path, new FunctionHandler<>(function));
     }
 
+    public <T, R> void registerPostHandler(String path, Function<T, R> function) {
+        postMap.put(path, new FunctionHandler<>(function));
+    }
 
-    public Optional<Handler> getHandler(String path) {
-        return Optional.ofNullable(routeMap.get(path));
+    public <T> void registerPutHandler(String path, Function<T, Void> function) {
+        putMap.put(path, new FunctionHandler<>(function));
+    }
+
+    public void registerDeleteHandler(String path, Runnable action) {
+        deleteMap.put(path, new SupplierHandler<>(() -> {
+            action.run();
+            return null;
+        }));
+    }
+
+    public Optional<Handler> getHandler(String method, String path) {
+        return switch (method) {
+            case "GET" -> Optional.ofNullable(getMap.get(path));
+            case "POST" -> Optional.ofNullable(postMap.get(path));
+            case "PUT" -> Optional.ofNullable(putMap.get(path));
+            case "DELETE" -> Optional.ofNullable(deleteMap.get(path));
+            default -> Optional.empty();
+        };
+    }
+
+    @Override
+    public String toString() {
+        return "ApiGroup{" +
+                "GET=" + getMap.keySet() + ", " +
+                "POST=" + postMap.keySet() + ", " +
+                "PUT=" + putMap.keySet() + ", " +
+                "DELETE=" + deleteMap.keySet() + "}";
     }
 
 //
