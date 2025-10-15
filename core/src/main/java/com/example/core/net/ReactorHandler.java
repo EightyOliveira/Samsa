@@ -22,19 +22,13 @@ public class ReactorHandler {
     }
 
     public void handle() throws IOException {
-        // 1. 读取HTTP请求
         String httpRequest = readHttpRequest();
-
-        // 2. 解析请求方法和路径
         String method = parseMethod(httpRequest);
         String path = parsePath(httpRequest);
-
-        // 3. 查找对应的Handler
         Optional<Handler> handlerOpt = apiGroup.getHandler(method, path);
 
         logger.debug("Handling {} {}", method, path);
 
-        // 4. 处理请求并发送响应
         if (handlerOpt.isPresent()) {
             Handler handler = handlerOpt.get();
             String response = processHandler(handler, httpRequest);
@@ -51,14 +45,11 @@ public class ReactorHandler {
         int bytesRead;
         long startTime = System.currentTimeMillis();
 
-        // 设置读取超时5秒
-        while ((bytesRead = channel.read(readBuffer)) > 0 ||
-                (System.currentTimeMillis() - startTime < 5000 && bytesRead == 0)) {
+        while ((bytesRead = channel.read(readBuffer)) > 0 || (System.currentTimeMillis() - startTime < 5000 && bytesRead == 0)) {
             if (bytesRead > 0) {
                 readBuffer.flip();
                 requestBuilder.append(StandardCharsets.UTF_8.decode(readBuffer));
                 readBuffer.clear();
-                // 检查是否已经读取到完整的HTTP请求(以空行结束)
                 if (requestBuilder.toString().contains("\r\n\r\n")) {
                     break;
                 }
@@ -84,19 +75,16 @@ public class ReactorHandler {
     }
 
     private String parsePath(String httpRequest) {
-        // 解析HTTP请求的第一行获取路径
         String[] lines = httpRequest.split("\r\n");
         if (lines.length > 0) {
             String[] parts = lines[0].split(" ");
             if (parts.length > 1) {
-                // 检查Connection头
                 for (String line : lines) {
                     if (line.startsWith("Connection:")) {
                         keepAlive = line.contains("keep-alive");
                         break;
                     }
                 }
-                // 获取原始路径并去除查询参数
                 String fullPath = parts[1];
                 return fullPath.split("\\?")[0];
             }
@@ -115,7 +103,6 @@ public class ReactorHandler {
                 return buildResponse(200, "OK", response.toString());
             } else if (handler instanceof FunctionHandler) {
                 FunctionHandler<String, ?> functionHandler = (FunctionHandler<String, ?>) handler;
-                // 提取请求体
                 String requestBody = extractRequestBody(httpRequest);
                 Object response = functionHandler.apply(requestBody);
                 return buildResponse(200, "OK", response.toString());

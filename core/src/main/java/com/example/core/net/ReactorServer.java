@@ -2,14 +2,13 @@ package com.example.core.net;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+import reactor.netty.http.server.HttpServer;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
-import java.util.Iterator;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -26,59 +25,53 @@ public class ReactorServer {
     }
 
     public void run() {
-        try (Selector selector = Selector.open();
-             ServerSocketChannel serverSocket = ServerSocketChannel.open()) {
+        logger.info("Starting server on port {}", port);
 
-            serverSocket.bind(new InetSocketAddress(port));
-            serverSocket.configureBlocking(false);
-            serverSocket.register(selector, SelectionKey.OP_ACCEPT);
+        HttpServer.create()
+                .port(port)
+                .handle((req, res) -> {
+                    String method = req.method().name();
+                    String path = req.uri().split("\\?")[0];
+                    Optional<Handler> handlerOpt = apiGroup.getHandler(method, path);
 
-            logger.info("Server started on port {}", port);
-
-            while (true) {
-                selector.select();
-                Iterator<SelectionKey> keys = selector.selectedKeys().iterator();
-
-                while (keys.hasNext()) {
-                    SelectionKey key = keys.next();
-                    keys.remove();
-
-                    if (key.isAcceptable()) {
-                        acceptConnection(selector, serverSocket);
-                    } else if (key.isReadable()) {
-                        virtualThreadPool.submit(() -> handleRequest(key));
+                    if (handlerOpt.isEmpty()) {
+                        res.status(404);
+                        return res.header("Content-Type", "text/plain")
+                                .sendString(Mono.just("Not Found"))
+                                .then();
                     }
-                }
-            }
-        } catch (IOException e) {
-            logger.error("Server error", e);
-        }
-    }
 
-    private void acceptConnection(Selector selector, ServerSocketChannel serverSocket) throws IOException {
-        SocketChannel clientChannel = serverSocket.accept();
-        clientChannel.configureBlocking(false);
-        clientChannel.register(selector, SelectionKey.OP_READ);
-    }
+                    Handler handler = handlerOpt.get();
 
-    private void handleRequest(SelectionKey key) {
-        try {
-            SocketChannel channel = (SocketChannel) key.channel();
-            ReactorHandler handler = new ReactorHandler(apiGroup, channel);
-            handler.handle();
+                    if (handler instanceof SupplierHandler<?> supplierHandler) {
+                        return Mono.fromCallable(supplierHandler::get)
+                                .subscribeOn(Schedulers.fromExecutor(virtualThreadPool))
+                                .map(Object::toString)
+                                .flatMap(content -> res.header("Content-Type", "text/plain")
+                                        .sendString(Mono.just(content))
+                                        .then());
+                    }
 
-            // 如果是短连接则关闭
-            if (!handler.isKeepAlive()) {
-                channel.close();
-            }
-        } catch (IOException e) {
-            try {
-                key.channel().close();
-                System.out.println(e.getMessage());
-            } catch (IOException ex) {
-                ex.printStackTrace();
-            }
-        }
+                    if (handler instanceof FunctionHandler) {
+                        return req.receive()
+                                .aggregate()
+                                .asString(StandardCharsets.UTF_8)
+                                .flatMap(body -> Mono.fromCallable(() -> ((FunctionHandler<String, ?>) handler).apply(body))
+                                        .subscribeOn(Schedulers.fromExecutor(virtualThreadPool))
+                                        .map(Object::toString))
+                                .flatMap(content -> res.header("Content-Type", "text/plain")
+                                        .sendString(Mono.just(content))
+                                        .then());
+                    }
+
+                    res.status(500);
+                    return res.header("Content-Type", "text/plain")
+                            .sendString(Mono.just("Unsupported handler type"))
+                            .then();
+                })
+                .bindNow(Duration.ofSeconds(30))
+                .onDispose()
+                .block();
     }
 
     public ApiGroup getApiGroup() {

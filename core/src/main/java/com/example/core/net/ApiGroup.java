@@ -55,19 +55,4 @@ public class ApiGroup {
                 "DELETE=" + deleteMap.keySet() + "}";
     }
 
-//
-//    public <T> Optional<T> invokeSupplierHandler(String path) {
-//        return getHandler(path)
-//                .filter(handler -> handler instanceof SupplierHandler)
-//                .map(handler -> ((SupplierHandler<T>) handler).get());
-//    }
-//
-//
-//    public <T, R> Optional<R> invokeFunctionHandler(String path, T input) {
-//        return getHandler(path)
-//                .filter(handler -> handler instanceof FunctionHandler)
-//                .map(handler -> ((FunctionHandler<T, R>) handler).apply(input));
-//    }
-
-
 }
