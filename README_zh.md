@@ -31,4 +31,7 @@
 5. **极致轻量**  
    完美支持 GraalVM Native Image 等轻量级部署方式。
 
+6. **原生 MessagePack 支持**  
+   提供比 JSON 快 3-5 倍的二进制序列化方案。
+
 ---

@@ -18,13 +18,14 @@ public class Main {
         };
         app.use(logger);
 
-        app.get("/hello", ctx -> "Hello from VT Web!");
+        app.get("/hello", ctx -> "Hello World!");
 
         app.get("/user/{id}", ctx -> {
             String id = ctx.pathParam("id");
             try {
                 Thread.sleep(10);
             } catch (InterruptedException e) {
+                e.printStackTrace();
             }
             return "User ID: " + id;
         });

@@ -6,7 +6,7 @@
         </encoder>
     </appender>
 
-    <logger name="com.example.core" level="DEBUG"/>
+    <logger name="com.core" level="DEBUG"/>
 
     <root level="INFO">
         <appender-ref ref="STDOUT"/>

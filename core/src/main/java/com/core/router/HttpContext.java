@@ -7,6 +7,8 @@ import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
 
 import java.util.Map;
+import java.io.IOException;
+import com.core.net.MessagePackMapper;
 
 public class HttpContext {
     private final String method;
@@ -14,12 +16,14 @@ public class HttpContext {
     private final HttpHeaders headers;
     private final Map<String, String> pathParams;
     private final ChannelHandlerContext nettyCtx;
+    private final byte[] body;
 
-    public HttpContext(String method, String uri, HttpHeaders headers, Map<String, String> pathParams, ChannelHandlerContext nettyCtx) {
+    public HttpContext(String method, String uri, HttpHeaders headers, Map<String, String> pathParams, byte[] body, ChannelHandlerContext nettyCtx) {
         this.method = method;
         this.uri = uri;
         this.headers = headers;
         this.pathParams = pathParams;
+        this.body = body;
         this.nettyCtx = nettyCtx;
     }
 
@@ -42,6 +46,25 @@ public class HttpContext {
 
     public void text(String body) {
         writeResponse(200, "text/plain; charset=UTF-8", body);
+    }
+
+
+    public void msgpack(Object obj) throws IOException {
+        byte[] bytes = MessagePackMapper.toBytes(obj);
+        FullHttpResponse response = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1,
+                HttpResponseStatus.OK,
+                Unpooled.wrappedBuffer(bytes)
+        );
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/msgpack");
+        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+        nettyCtx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+    }
+
+
+    public <T> T bodyAs(Class<T> clazz) throws IOException {
+        if (body == null || body.length == 0) return null;
+        return MessagePackMapper.fromBytes(body, clazz);
     }
 
     private void writeResponse(int status, String contentType, String body) {

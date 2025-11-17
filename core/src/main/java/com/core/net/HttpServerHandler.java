@@ -11,8 +11,8 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
 
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -31,7 +31,6 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest req) {
-        // 使用虚拟线程池异步处理请求，同时维护活跃请求计数
         VirtualThreadPool.getInstance().execute(() -> {
             ActivateRequest.incrementActive();
             try {
@@ -44,13 +43,31 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
                     return;
                 }
 
-                HttpContext httpCtx = new HttpContext(method, uri, req.headers(), match.pathParams(), ctx);
+                byte[] bodyBytes = null;
+                if (req.content() != null && req.content().readableBytes() > 0) {
+                    int len = req.content().readableBytes();
+                    bodyBytes = new byte[len];
+                    req.content().getBytes(req.content().readerIndex(), bodyBytes);
+                }
 
-                // 执行中间件链并获取结果
+                HttpContext httpCtx = new HttpContext(method, uri, req.headers(), match.pathParams(), bodyBytes, ctx);
+
                 Object result = match.wrappedHandler().execute(httpCtx);
 
-                String body = result == null ? "" : (result instanceof String s ? s : result.toString());
-                sendResponse(ctx, 200, body);
+                // 根据 Accept header 决定序列化方式，优先返回 msgpack
+                String accept = req.headers().get("Accept");
+                if (accept != null && accept.contains("application/msgpack")) {
+                    try {
+                        byte[] bytes = result == null ? new byte[0] : MessagePackMapper.toBytes(result);
+                        sendMsgpackResponse(ctx, bytes);
+                    } catch (Exception e) {
+                        log.log(Level.WARNING, "msgpack serialize error", e);
+                        sendResponse(ctx, 500, "Internal Error");
+                    }
+                } else {
+                    String body = result == null ? "" : (result instanceof String s ? s : result.toString());
+                    sendResponse(ctx, 200, body);
+                }
             } catch (Exception e) {
                 log.log(Level.WARNING, e.getMessage(), e);
                 sendResponse(ctx, 500, "Internal Error");
@@ -71,6 +88,17 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
                 Unpooled.copiedBuffer(body, CharsetUtil.UTF_8)
         );
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
+        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private void sendMsgpackResponse(ChannelHandlerContext ctx, byte[] bytes) {
+        FullHttpResponse response = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1,
+                HttpResponseStatus.OK,
+                Unpooled.wrappedBuffer(bytes == null ? new byte[0] : bytes)
+        );
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "application/msgpack");
         response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes());
         ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }

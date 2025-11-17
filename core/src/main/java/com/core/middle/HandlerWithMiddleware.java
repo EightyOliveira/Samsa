@@ -22,7 +22,6 @@ public class HandlerWithMiddleware {
 
     private HandlerChain buildChain(int index, HttpContext ctx) {
         if (index == middlewares.size()) {
-            // 所有中间件执行完，调用最终 handler
             return () -> finalHandler.handle(ctx);
         }
 
